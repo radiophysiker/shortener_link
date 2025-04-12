@@ -4,17 +4,17 @@ import (
 	"github.com/radiophysiker/shortener_link/internal/config"
 )
 
-type URL interface {
-	CreateShortURL(fullURL string) (string, error)
-	GetFullURL(shortURL string) (string, error)
+type URLUseCase interface {
+	URLCreator
+	URLGetter
 }
 
 type URLHandler struct {
-	URLUseCase URL
-	config     *config.Config
+    URLUseCase
+	config *config.Config
 }
 
-func NewURLHandler(u URL, cfg *config.Config) *URLHandler {
+func NewURLHandler(u URLUseCase, cfg *config.Config) *URLHandler {
 	return &URLHandler{
 		URLUseCase: u,
 		config:     cfg,
