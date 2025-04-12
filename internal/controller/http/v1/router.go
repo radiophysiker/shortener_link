@@ -12,6 +12,7 @@ func NewRouter(h *handlers.URLHandler) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestLogger())
+	r.Use(middleware.GzipMiddleware)
 
 	r.Post("/", h.CreateShortURL)
 	r.Get("/{id}", h.GetFullURL)
