@@ -15,9 +15,19 @@ type URLGetter interface {
 	GetFullURL(shortURL string) (string, error)
 }
 
-func (h *URLHandler) GetFullURL(w http.ResponseWriter, r *http.Request) {
+type GetHandler struct {
+	getter URLGetter
+}
+
+func NewGetHandler(getter URLGetter) *GetHandler {
+	return &GetHandler{
+		getter: getter,
+	}
+}
+
+func (h *GetHandler) GetFullURL(w http.ResponseWriter, r *http.Request) {
 	shortURL := chi.URLParam(r, "id")
-	fullURL, err := h.URLUseCase.GetFullURL(shortURL)
+	fullURL, err := h.getter.GetFullURL(shortURL)
 	if err != nil {
 		if errors.Is(err, usecases.ErrEmptyShortURL) {
 			zap.L().Error("short url is empty", zap.Error(err), zap.String("shortURL", shortURL))

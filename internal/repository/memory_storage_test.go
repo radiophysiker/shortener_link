@@ -11,12 +11,12 @@ import (
 )
 
 func TestNewURLRepository(t *testing.T) {
-	urlStorage := NewURLRepository()
-	assert.NotNil(t, urlStorage, "NewURLRepository should return a non-nil URLStorage")
+	urlStorage := NewMemoryRepository()
+	assert.NotNil(t, urlStorage, "NewMemoryRepository should return a non-nil MemoryStorage")
 }
 
 func TestSave(t *testing.T) {
-	urlStorage := NewURLRepository()
+	urlStorage := NewMemoryRepository()
 	url := entity.URL{
 		ShortURL: "short",
 		FullURL:  "full",
@@ -26,7 +26,7 @@ func TestSave(t *testing.T) {
 }
 
 func TestSaveWithEmptyFullURL(t *testing.T) {
-	urlStorage := NewURLRepository()
+	urlStorage := NewMemoryRepository()
 	url := entity.URL{
 		ShortURL: "short",
 		FullURL:  "",
@@ -36,7 +36,7 @@ func TestSaveWithEmptyFullURL(t *testing.T) {
 }
 
 func TestGetFullURL(t *testing.T) {
-	urlStorage := NewURLRepository()
+	urlStorage := NewMemoryRepository()
 	url := entity.URL{
 		ShortURL: "short",
 		FullURL:  "full",
@@ -50,7 +50,7 @@ func TestGetFullURL(t *testing.T) {
 }
 
 func TestGetFullURLWithEmptyShortURL(t *testing.T) {
-	urlStorage := NewURLRepository()
+	urlStorage := NewMemoryRepository()
 
 	fullURL, err := urlStorage.GetFullURL("")
 	assert.Equal(t, usecases.ErrEmptyShortURL, err, "GetFullURL should return ErrEmptyShortURL for empty shortURL")
@@ -58,7 +58,7 @@ func TestGetFullURLWithEmptyShortURL(t *testing.T) {
 }
 
 func TestGetFullURLWithNotFoundShortURL(t *testing.T) {
-	urlStorage := NewURLRepository()
+	urlStorage := NewMemoryRepository()
 	url := entity.URL{
 		ShortURL: "short",
 		FullURL:  "full",
@@ -72,7 +72,7 @@ func TestGetFullURLWithNotFoundShortURL(t *testing.T) {
 }
 
 func TestSaveExistingURL(t *testing.T) {
-	urlStorage := NewURLRepository()
+	urlStorage := NewMemoryRepository()
 	url := entity.URL{
 		ShortURL: "short",
 		FullURL:  "full",
@@ -91,26 +91,26 @@ func TestSaveExistingURL(t *testing.T) {
 }
 
 func TestIsShortURLExists(t *testing.T) {
-	urlStorage := NewURLRepository()
+	urlStorage := NewMemoryRepository()
 	url := entity.URL{
 		ShortURL: "short",
 		FullURL:  "full",
 	}
 
 	// Test non-existent URL
-	exists := urlStorage.IsShortURLExists(url)
+	exists := urlStorage.isShortURLExists(url)
 	assert.False(t, exists, "Should return false for non-existent URL")
 
 	// Save URL and test again
 	err := urlStorage.Save(url)
 	require.NoError(t, err)
 
-	exists = urlStorage.IsShortURLExists(url)
+	exists = urlStorage.isShortURLExists(url)
 	assert.True(t, exists, "Should return true for existing URL")
 }
 
 func TestMultipleSave(t *testing.T) {
-	urlStorage := NewURLRepository()
+	urlStorage := NewMemoryRepository()
 	urls := []entity.URL{
 		{ShortURL: "short1", FullURL: "full1"},
 		{ShortURL: "short2", FullURL: "full2"},
