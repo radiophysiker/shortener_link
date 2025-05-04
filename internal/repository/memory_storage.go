@@ -23,13 +23,13 @@ func NewMemoryRepository() *MemoryStorage {
 }
 
 // isShortURLExists checks if the short URL exists in memory.
-func (s *MemoryStorage) isShortURLExists(url entity.URL) bool {
+func (s *MemoryStorage) isShortURLExists(url entity.URL) (bool, error) {
 	for shortURL := range s.urls {
 		if shortURL == url.ShortURL {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // Save saves the URL in memory.
@@ -38,7 +38,11 @@ func (s *MemoryStorage) Save(url entity.URL) error {
 	if fullURL == "" {
 		return usecases.ErrEmptyFullURL
 	}
-	if s.isShortURLExists(url) {
+	exists, err := s.isShortURLExists(url)
+	if err != nil {
+		return fmt.Errorf("failed to check if short URL exists: %w", err)
+	}
+	if exists {
 		return fmt.Errorf("%w for: %s", usecases.ErrURLExists, url.ShortURL)
 	}
 	s.urls[url.ShortURL] = fullURL
@@ -59,5 +63,20 @@ func (s *MemoryStorage) GetFullURL(shortURL ShortURL) (FullURL, error) {
 
 func (s *MemoryStorage) Close() error {
 	s.urls = nil
+	return nil
+}
+func (s *MemoryStorage) SaveBatch(urls []entity.URL) error {
+	if len(urls) == 0 {
+		return nil
+	}
+
+	for _, url := range urls {
+		if url.FullURL == "" {
+			return usecases.ErrEmptyFullURL
+		}
+
+		s.urls[url.ShortURL] = url.FullURL
+	}
+
 	return nil
 }

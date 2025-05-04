@@ -7,11 +7,12 @@ import (
 
 type Saver interface {
 	Save(url entity.URL) error
+	SaveBatch(urls []entity.URL) error
 }
 
 type Finder interface {
 	GetFullURL(shortURL ShortURL) (FullURL, error)
-	isShortURLExists(url entity.URL) bool
+	isShortURLExists(url entity.URL) (bool, error)
 }
 
 type Closer interface {
@@ -25,6 +26,13 @@ type Storage interface {
 }
 
 func NewStorage(cfg *config.Config) (Storage, error) {
+	if cfg.DatabaseDSN != "" {
+		pgStorage, err := NewPostgresStorage(cfg.DatabaseDSN)
+		if err != nil {
+			return nil, err
+		}
+		return pgStorage, nil
+	}
 	if cfg.FileStoragePath != "" {
 		return NewFileStorage(cfg.FileStoragePath)
 	}

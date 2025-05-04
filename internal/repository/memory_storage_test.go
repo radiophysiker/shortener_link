@@ -98,14 +98,20 @@ func TestIsShortURLExists(t *testing.T) {
 	}
 
 	// Test non-existent URL
-	exists := urlStorage.isShortURLExists(url)
+	exists, err := urlStorage.isShortURLExists(url)
+	if err != nil {
+		require.NoError(t, err)
+	}
 	assert.False(t, exists, "Should return false for non-existent URL")
 
 	// Save URL and test again
-	err := urlStorage.Save(url)
+	err = urlStorage.Save(url)
 	require.NoError(t, err)
 
-	exists = urlStorage.isShortURLExists(url)
+	exists, err = urlStorage.isShortURLExists(url)
+	if err != nil {
+		require.NoError(t, err)
+	}
 	assert.True(t, exists, "Should return true for existing URL")
 }
 

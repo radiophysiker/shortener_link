@@ -63,9 +63,9 @@ func (fs *FileStorage) init() error {
 	return nil
 }
 
-func (fs *FileStorage) isShortURLExists(url entity.URL) bool {
+func (fs *FileStorage) isShortURLExists(url entity.URL) (bool, error) {
 	_, exists := fs.urls[url.ShortURL]
-	return exists
+	return exists, nil
 }
 
 func (fs *FileStorage) getCount() int64 {
@@ -75,7 +75,11 @@ func (fs *FileStorage) getCount() int64 {
 
 func (fs *FileStorage) Save(url entity.URL) error {
 	uuid := fs.getCount()
-	if fs.isShortURLExists(url) {
+	exists, err := fs.isShortURLExists(url)
+	if err != nil {
+		return fmt.Errorf("failed to check if short URL exists: %w", err)
+	}
+	if exists {
 		return fmt.Errorf("%w for: %s", usecases.ErrURLExists, url.ShortURL)
 	}
 	record := FileRecord{
@@ -108,5 +112,36 @@ func (fs *FileStorage) Close() error {
 	if fs.file != nil {
 		return fs.file.Close()
 	}
+	return nil
+}
+
+func (fs *FileStorage) SaveBatch(urls []entity.URL) error {
+	if len(urls) == 0 {
+		return nil
+	}
+
+	for _, url := range urls {
+		if url.FullURL == "" {
+			return usecases.ErrEmptyFullURL
+		}
+
+		uuid := fs.getCount()
+		record := FileRecord{
+			UUID:        uuid,
+			ShortURL:    url.ShortURL,
+			OriginalURL: url.FullURL,
+		}
+		data, err := json.Marshal(record)
+		if err != nil {
+			return fmt.Errorf("failed to marshal record: %w", err)
+		}
+
+		if _, err := fs.file.Write(append(data, '\n')); err != nil {
+			return fmt.Errorf("failed to write to file: %w", err)
+		}
+
+		fs.urls[url.ShortURL] = url.FullURL
+	}
+
 	return nil
 }

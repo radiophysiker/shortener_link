@@ -17,11 +17,19 @@ var (
 	ErrEmptyFullURL  = errors.New("empty full URL")
 	ErrEmptyShortURL = errors.New("empty short URL")
 	ErrURLNotFound   = errors.New("URL not found")
+	ErrEmptyBatch    = errors.New("empty batch")
 )
+
+type BatchItem struct {
+	CorrelationID string
+	OriginalURL   string
+	ShortURL      string
+}
 
 type URLRepository interface {
 	Save(url entity.URL) error
 	GetFullURL(shortURL string) (string, error)
+	SaveBatch(urls []entity.URL) error
 }
 
 type URLUseCase struct {
@@ -64,6 +72,36 @@ func (us URLUseCase) retryCreateShortURL(numberAttempts int, fullURL string) (st
 		return "", fmt.Errorf("failed to save URL: %w", err)
 	}
 	return shortURL, nil
+}
+
+// CreateBatchURLs creates multiple short URLs in a batch.
+func (us URLUseCase) CreateBatchURLs(items []BatchItem) ([]BatchItem, error) {
+	if len(items) == 0 {
+		return nil, ErrEmptyBatch
+	}
+	urls := make([]entity.URL, 0, len(items))
+	resultItems := make([]BatchItem, 0, len(items))
+
+	for i := range items {
+		if items[i].OriginalURL == "" {
+			return nil, ErrEmptyFullURL
+		}
+
+		shortURL := utils.GetShortRandomString(lenShortenedURL)
+		urls = append(urls, entity.URL{
+			ShortURL: shortURL,
+			FullURL:  items[i].OriginalURL,
+		})
+
+		items[i].ShortURL = shortURL
+		resultItems = append(resultItems, items[i])
+	}
+
+	if err := us.urlRepository.SaveBatch(urls); err != nil {
+		return nil, fmt.Errorf("failed to save batch of URLs: %w", err)
+	}
+
+	return resultItems, nil
 }
 
 // GetFullURL returns the full URL by the short URL.
