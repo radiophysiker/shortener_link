@@ -12,18 +12,18 @@ type (
 	FullURL  = string
 )
 
-type URLStorage struct {
+type MemoryStorage struct {
 	urls map[ShortURL]FullURL
 }
 
-func NewURLRepository() *URLStorage {
-	return &URLStorage{
+func NewMemoryRepository() *MemoryStorage {
+	return &MemoryStorage{
 		urls: make(map[ShortURL]FullURL),
 	}
 }
 
-// IsShortURLExists checks if the short URL exists in memory.
-func (s URLStorage) IsShortURLExists(url entity.URL) bool {
+// isShortURLExists checks if the short URL exists in memory.
+func (s *MemoryStorage) isShortURLExists(url entity.URL) bool {
 	for shortURL := range s.urls {
 		if shortURL == url.ShortURL {
 			return true
@@ -33,12 +33,12 @@ func (s URLStorage) IsShortURLExists(url entity.URL) bool {
 }
 
 // Save saves the URL in memory.
-func (s URLStorage) Save(url entity.URL) error {
+func (s *MemoryStorage) Save(url entity.URL) error {
 	fullURL := url.FullURL
 	if fullURL == "" {
 		return usecases.ErrEmptyFullURL
 	}
-	if s.IsShortURLExists(url) {
+	if s.isShortURLExists(url) {
 		return fmt.Errorf("%w for: %s", usecases.ErrURLExists, url.ShortURL)
 	}
 	s.urls[url.ShortURL] = fullURL
@@ -46,7 +46,7 @@ func (s URLStorage) Save(url entity.URL) error {
 }
 
 // GetFullURL returns the full URL by the short URL.
-func (s URLStorage) GetFullURL(shortURL ShortURL) (FullURL, error) {
+func (s *MemoryStorage) GetFullURL(shortURL ShortURL) (FullURL, error) {
 	if shortURL == "" {
 		return "", usecases.ErrEmptyShortURL
 	}
@@ -55,4 +55,9 @@ func (s URLStorage) GetFullURL(shortURL ShortURL) (FullURL, error) {
 		return "", fmt.Errorf("%w for: %s", usecases.ErrURLNotFound, shortURL)
 	}
 	return fullURL, nil
+}
+
+func (s *MemoryStorage) Close() error {
+	s.urls = nil
+	return nil
 }
