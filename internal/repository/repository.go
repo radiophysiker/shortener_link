@@ -12,7 +12,6 @@ type Saver interface {
 
 type Finder interface {
 	GetFullURL(shortURL ShortURL) (FullURL, error)
-	isShortURLExists(url entity.URL) (bool, error)
 }
 
 type Closer interface {
@@ -33,8 +32,5 @@ func NewStorage(cfg *config.Config) (Storage, error) {
 		}
 		return pgStorage, nil
 	}
-	if cfg.FileStoragePath != "" {
-		return NewFileStorage(cfg.FileStoragePath)
-	}
-	return NewMemoryRepository(), nil
+	return NewGenericStorage(cfg.FileStoragePath)
 }

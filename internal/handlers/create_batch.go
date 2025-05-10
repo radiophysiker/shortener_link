@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -76,7 +77,16 @@ func (h *CreateBatchURLsHandler) CreateBatchURLs(w http.ResponseWriter, r *http.
 	for _, item := range requestItems {
 		if item.OriginalURL == "" {
 			w.WriteHeader(http.StatusBadRequest)
-			_, err := w.Write([]byte("url is empty"))
+			_, err := w.Write([]byte("original_url is empty"))
+			if err != nil {
+				utils.WriteErrorWithCannotWriteResponse(w, err)
+			}
+			return
+		}
+
+		if item.CorrelationID == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, err := w.Write([]byte("correlation_id is empty"))
 			if err != nil {
 				utils.WriteErrorWithCannotWriteResponse(w, err)
 			}
@@ -103,9 +113,24 @@ func (h *CreateBatchURLsHandler) CreateBatchURLs(w http.ResponseWriter, r *http.
 
 	resultItems, err := h.creator.CreateBatchURLs(batchItems)
 	if err != nil {
-		zap.L().Error("cannot create batch of short URLs", zap.Error(err))
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+		if errors.Is(err, usecases.ErrURLConflict) {
+			// В случае конфликта просто логируем и продолжаем с теми URL, которые удалось создать
+			zap.L().Warn("some URLs in batch already exist", zap.Error(err))
+			// Если resultItems пустой, это означает, что все URL в пакете конфликтовали
+			if len(resultItems) == 0 {
+				w.WriteHeader(http.StatusConflict)
+				_, err := w.Write([]byte("all URLs in batch already exist"))
+				if err != nil {
+					utils.WriteErrorWithCannotWriteResponse(w, err)
+				}
+				return
+			}
+		} else {
+			// Для других ошибок возвращаем 500
+			zap.L().Error("cannot create batch of short URLs", zap.Error(err))
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 	}
 
 	responseItems := make([]BatchURLResponse, 0, len(resultItems))

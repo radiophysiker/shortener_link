@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.uber.org/zap"
 
+	"github.com/jackc/pgconn"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"go.uber.org/zap"
 
 	"github.com/radiophysiker/shortener_link/internal/entity"
 	"github.com/radiophysiker/shortener_link/internal/usecases"
@@ -40,10 +42,11 @@ func (p *PostgresStorage) createTable() error {
 	CREATE TABLE IF NOT EXISTS shortened_urls (
 		id SERIAL PRIMARY KEY,
 		short_url VARCHAR(10) NOT NULL UNIQUE,
-		full_url TEXT NOT NULL,
+		full_url TEXT NOT NULL UNIQUE,
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
 	CREATE INDEX IF NOT EXISTS idx_short_url ON shortened_urls(short_url);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_full_url ON shortened_urls(full_url);
 	`
 
 	_, err := p.pool.Exec(context.Background(), query)
@@ -86,7 +89,7 @@ func (p *PostgresStorage) Save(url entity.URL) error {
 		return fmt.Errorf("failed to check if short URL exists: %w", err)
 	}
 	if exists {
-		return fmt.Errorf("%w for: %s", usecases.ErrURLExists, url.ShortURL)
+		return fmt.Errorf("%w for: %s", usecases.ErrURLGeneratedBefore, url.ShortURL)
 	}
 	query := `
 	INSERT INTO shortened_urls (short_url, full_url)
@@ -94,6 +97,9 @@ func (p *PostgresStorage) Save(url entity.URL) error {
 	`
 	_, err = p.pool.Exec(context.Background(), query, url.ShortURL, url.FullURL)
 	if err != nil {
+		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == pgerrcode.UniqueViolation {
+			return usecases.ErrURLConflict
+		}
 		return fmt.Errorf("failed to save URL: %w", err)
 	}
 	return nil
@@ -113,11 +119,34 @@ func (p *PostgresStorage) GetFullURL(shortURL ShortURL) (FullURL, error) {
 	err := p.pool.QueryRow(context.Background(), query, shortURL).Scan(&fullURL)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", fmt.Errorf("%w: %s", usecases.ErrURLNotFound, shortURL) // Используем ошибку из usecases
+			return "", fmt.Errorf("%w: %s", usecases.ErrURLNotFound, shortURL)
 		}
 		return "", fmt.Errorf("couldn't get full URL for %s: %w", shortURL, err)
 	}
 	return fullURL, nil
+}
+
+func (p *PostgresStorage) GetShortURLByFullURL(fullURL string) (string, error) {
+	if fullURL == "" {
+		return "", usecases.ErrEmptyFullURL
+	}
+
+	query := `
+	SELECT short_url
+	FROM shortened_urls
+	WHERE full_url = $1;
+	`
+
+	var shortURL string
+	err := p.pool.QueryRow(context.Background(), query, fullURL).Scan(&shortURL)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("%w for URL: %s", usecases.ErrURLNotFound, fullURL)
+		}
+		return "", fmt.Errorf("failed to get short URL for %s: %w", fullURL, err)
+	}
+
+	return shortURL, nil
 }
 
 func (p *PostgresStorage) SaveBatch(urls []entity.URL) error {
@@ -139,12 +168,16 @@ func (p *PostgresStorage) SaveBatch(urls []entity.URL) error {
 
 	for _, url := range urls {
 		query := `
-		INSERT INTO shortened_urls (short_url, full_url)
+		INSERT INTO shortened_urls	 (short_url, full_url)
 		VALUES ($1, $2);
 		`
 		_, err = tx.Exec(context.Background(), query, url.ShortURL, url.FullURL)
 		if err != nil {
-			return fmt.Errorf("failed to save URL in batch: %w", err)
+			zap.L().Error("failed to save URL in batch", zap.Error(err))
+			if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == pgerrcode.UniqueViolation {
+				return usecases.ErrURLConflict
+			}
+			return fmt.Errorf("failed to save URL: %w", err)
 		}
 	}
 

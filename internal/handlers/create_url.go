@@ -64,7 +64,15 @@ func (h *CreateHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := h.creator.CreateShortURL(fullURL)
 	if err != nil {
-		if errors.Is(err, usecases.ErrURLExists) {
+		if errors.Is(err, usecases.ErrFailedToGenerateShortURL) {
+			w.WriteHeader(http.StatusInternalServerError)
+			zap.L().Error("failed to generate short URL", zap.Error(err), zap.String("url", fullURL))
+			_, err := w.Write([]byte("failed to generate short URL"))
+			if err != nil {
+				utils.WriteErrorWithCannotWriteResponse(w, err)
+			}
+		}
+		if errors.Is(err, usecases.ErrURLConflict) {
 			w.WriteHeader(http.StatusConflict)
 			zap.L().Error("url already exists", zap.Error(err), zap.String("url", fullURL))
 			_, err := w.Write([]byte("url already exists"))
@@ -153,7 +161,7 @@ func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Re
 
 	shortURL, err := h.creator.CreateShortURL(fullURL)
 	if err != nil {
-		if errors.Is(err, usecases.ErrURLExists) {
+		if errors.Is(err, usecases.ErrURLConflict) {
 			w.WriteHeader(http.StatusConflict)
 			zap.L().Error("url already exists", zap.Error(err), zap.String("url", fullURL))
 			_, err := w.Write([]byte("url already exists"))

@@ -13,11 +13,13 @@ const lenShortenedURL = 6
 const maxNumberAttempts = 5
 
 var (
-	ErrURLExists     = errors.New("URL already exists")
-	ErrEmptyFullURL  = errors.New("empty full URL")
-	ErrEmptyShortURL = errors.New("empty short URL")
-	ErrURLNotFound   = errors.New("URL not found")
-	ErrEmptyBatch    = errors.New("empty batch")
+	ErrURLGeneratedBefore       = errors.New("shortURL already generated before")
+	ErrFailedToGenerateShortURL = errors.New("failed to generate short URL")
+	ErrEmptyFullURL             = errors.New("empty full URL")
+	ErrEmptyShortURL            = errors.New("empty short URL")
+	ErrURLNotFound              = errors.New("URL not found")
+	ErrEmptyBatch               = errors.New("empty batch")
+	ErrURLConflict              = errors.New("URL already exists in the database")
 )
 
 type BatchItem struct {
@@ -61,10 +63,10 @@ func (us URLUseCase) retryCreateShortURL(numberAttempts int, fullURL string) (st
 		if errors.Is(err, ErrEmptyFullURL) {
 			return "", ErrEmptyFullURL
 		}
-		if errors.Is(err, ErrURLExists) {
+		if errors.Is(err, ErrURLGeneratedBefore) {
 			if numberAttempts >= maxNumberAttempts {
 				// if we have reached the maximum number of attempts, we return an error
-				return "", ErrURLExists
+				return "", ErrFailedToGenerateShortURL
 			} else {
 				return us.retryCreateShortURL(numberAttempts+1, fullURL)
 			}
@@ -85,6 +87,9 @@ func (us URLUseCase) CreateBatchURLs(items []BatchItem) ([]BatchItem, error) {
 	for i := range items {
 		if items[i].OriginalURL == "" {
 			return nil, ErrEmptyFullURL
+		}
+		if items[i].CorrelationID == "" {
+			return nil, ErrEmptyShortURL
 		}
 
 		shortURL := utils.GetShortRandomString(lenShortenedURL)
