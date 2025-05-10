@@ -104,13 +104,12 @@ func (h *CreateHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 	baseURL := h.config.BaseURL
 	shortURLPath, err := url.JoinPath(baseURL, shortURL)
 	if err != nil {
-		zap.L().Error("cannot join base URL and short URL: %v", zap.Error(err))
+		zap.L().Error("cannot join base URL and short URL", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	_, err = w.Write([]byte(shortURLPath))
 	if err != nil {
-		zap.L().Error("cannot write short URL: %v", zap.Error(err))
 		utils.WriteErrorWithCannotWriteResponse(w, err)
 	}
 }
@@ -168,7 +167,6 @@ func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Re
 	shortURL, err := h.creator.CreateShortURL(fullURL)
 	if err != nil {
 		if errors.Is(err, usecases.ErrURLConflict) {
-			w.WriteHeader(http.StatusConflict)
 			baseURL := h.config.BaseURL
 			shortURLPath, err := url.JoinPath(baseURL, shortURL)
 			if err != nil {
@@ -183,6 +181,7 @@ func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Re
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
 			_, err = w.Write(jsonResp)
 			if err != nil {
 				utils.WriteErrorWithCannotWriteResponse(w, err)
@@ -213,7 +212,7 @@ func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Re
 	baseURL := h.config.BaseURL
 	shortURLPath, err := url.JoinPath(baseURL, shortURL)
 	if err != nil {
-		zap.L().Error("cannot join base URL and short URL: %v", zap.Error(err))
+		zap.L().Error("cannot join base URL and short URL", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -223,12 +222,10 @@ func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Re
 		utils.WriteErrorWithCannotWriteResponse(w, err)
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_, err = w.Write(jsonResp)
 	if err != nil {
 		utils.WriteErrorWithCannotWriteResponse(w, err)
-		return
 	}
 }

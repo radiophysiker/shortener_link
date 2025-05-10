@@ -84,23 +84,23 @@ func (p *PostgresStorage) Save(url entity.URL) error {
 	if fullURL == "" {
 		return usecases.ErrEmptyFullURL
 	}
-	exists, err := p.isShortURLExists(url)
-	if err != nil {
-		return fmt.Errorf("failed to check if short URL exists: %w", err)
+
+	// First try to get the existing short URL for this full URL
+	existingShortURL, err := p.GetShortURLByFullURL(fullURL)
+	if err == nil {
+		// If we found an existing short URL, return it with a conflict error
+		return fmt.Errorf("%w: %s", usecases.ErrURLConflict, existingShortURL)
 	}
-	if exists {
-		return fmt.Errorf("%w for: %s", usecases.ErrURLGeneratedBefore, url.ShortURL)
-	}
+
+	// If no existing URL found, proceed with saving
 	query := `
 	INSERT INTO shortened_urls (short_url, full_url)
-	VALUES ($1, $2)
-	ON CONFLICT (full_url) DO UPDATE SET short_url = shortened_urls.short_url
-	RETURNING short_url;
+	VALUES ($1, $2);
 	`
-	var existingShortURL string
-	err = p.pool.QueryRow(context.Background(), query, url.ShortURL, url.FullURL).Scan(&existingShortURL)
+	_, err = p.pool.Exec(context.Background(), query, url.ShortURL, url.FullURL)
 	if err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == pgerrcode.UniqueViolation {
+			// If we get a unique violation, try to get the existing short URL again
 			existingShortURL, err = p.GetShortURLByFullURL(fullURL)
 			if err != nil {
 				return fmt.Errorf("failed to get existing short URL: %w", err)
@@ -181,7 +181,12 @@ func (p *PostgresStorage) SaveBatch(urls []entity.URL) error {
 		if err != nil {
 			zap.L().Error("failed to save URL in batch", zap.Error(err))
 			if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == pgerrcode.UniqueViolation {
-				return usecases.ErrURLConflict
+				// If we get a unique violation, try to get the existing short URL again
+				existingShortURL, err := p.GetShortURLByFullURL(url.FullURL)
+				if err != nil {
+					return fmt.Errorf("failed to get existing short URL: %w", err)
+				}
+				return fmt.Errorf("%w: %s", usecases.ErrURLConflict, existingShortURL)
 			}
 			return fmt.Errorf("failed to save URL: %w", err)
 		}
