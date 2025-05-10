@@ -1,17 +1,19 @@
 package repository
 
 import (
+	"context"
+
 	"github.com/radiophysiker/shortener_link/internal/config"
 	"github.com/radiophysiker/shortener_link/internal/entity"
 )
 
 type Saver interface {
-	Save(url entity.URL) error
-	SaveBatch(urls []entity.URL) error
+	Save(ctx context.Context, url entity.URL) error
+	SaveBatch(ctx context.Context, urls []entity.URL) error
 }
 
 type Finder interface {
-	GetFullURL(shortURL ShortURL) (FullURL, error)
+	GetFullURL(ctx context.Context, shortURL ShortURL) (FullURL, error)
 }
 
 type Closer interface {

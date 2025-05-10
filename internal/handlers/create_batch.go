@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -25,7 +26,7 @@ type BatchURLResponse struct {
 }
 
 type CreateBatchURLs interface {
-	CreateBatchURLs(items []usecases.BatchItem) ([]usecases.BatchItem, error)
+	CreateBatchURLs(ctx context.Context, items []usecases.BatchItem) ([]usecases.BatchItem, error)
 }
 
 type CreateBatchURLsHandler struct {
@@ -38,6 +39,7 @@ func NewCreateBatchURLsHandler(createBatchURLs CreateBatchURLs, cfg *config.Conf
 }
 
 func (h *CreateBatchURLsHandler) CreateBatchURLs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -111,12 +113,10 @@ func (h *CreateBatchURLsHandler) CreateBatchURLs(w http.ResponseWriter, r *http.
 		})
 	}
 
-	resultItems, err := h.creator.CreateBatchURLs(batchItems)
+	resultItems, err := h.creator.CreateBatchURLs(ctx, batchItems)
 	if err != nil {
 		if errors.Is(err, usecases.ErrURLConflict) {
-			// В случае конфликта просто логируем и продолжаем с теми URL, которые удалось создать
 			zap.L().Warn("some URLs in batch already exist", zap.Error(err))
-			// Если resultItems пустой, это означает, что все URL в пакете конфликтовали
 			if len(resultItems) == 0 {
 				w.WriteHeader(http.StatusConflict)
 				_, err := w.Write([]byte("all URLs in batch already exist"))

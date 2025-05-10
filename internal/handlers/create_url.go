@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -15,7 +16,7 @@ import (
 )
 
 type URLCreator interface {
-	CreateShortURL(fullURL string) (string, error)
+	CreateShortURL(ctx context.Context, fullURL string) (string, error)
 }
 
 type CreateHandler struct {
@@ -32,6 +33,7 @@ func NewCreateHandler(creator URLCreator, cfg *config.Config) *CreateHandler {
 
 func (h *CreateHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
+	ctx := r.Context()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		zap.L().Error("cannot read request body: %v", zap.Error(err))
@@ -62,7 +64,7 @@ func (h *CreateHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortURL, err := h.creator.CreateShortURL(fullURL)
+	shortURL, err := h.creator.CreateShortURL(ctx, fullURL)
 	if err != nil {
 		if errors.Is(err, usecases.ErrURLConflict) {
 			w.WriteHeader(http.StatusConflict)
@@ -124,6 +126,7 @@ type CreateShortURLEntryResponse struct {
 
 func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
+	ctx := r.Context()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		zap.L().Error("cannot read request body: %v", zap.Error(err))
@@ -164,7 +167,7 @@ func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	shortURL, err := h.creator.CreateShortURL(fullURL)
+	shortURL, err := h.creator.CreateShortURL(ctx, fullURL)
 	if err != nil {
 		if errors.Is(err, usecases.ErrURLConflict) {
 			baseURL := h.config.BaseURL

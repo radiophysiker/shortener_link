@@ -2,6 +2,7 @@ package repository
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -92,7 +93,7 @@ func (fs *GenericStorage) getCount() int64 {
 	return fs.count
 }
 
-func (fs *GenericStorage) Save(url entity.URL) error {
+func (fs *GenericStorage) Save(ctx context.Context, url entity.URL) error {
 	if url.FullURL == "" {
 		return usecases.ErrEmptyFullURL
 	}
@@ -122,7 +123,7 @@ func (fs *GenericStorage) Save(url entity.URL) error {
 	return nil
 }
 
-func (fs *GenericStorage) GetFullURL(shortURL ShortURL) (FullURL, error) {
+func (fs *GenericStorage) GetFullURL(ctx context.Context, shortURL ShortURL) (FullURL, error) {
 	if shortURL == "" {
 		return "", usecases.ErrEmptyShortURL
 	}
@@ -140,7 +141,7 @@ func (fs *GenericStorage) Close() error {
 	return nil
 }
 
-func (fs *GenericStorage) SaveBatch(urls []entity.URL) error {
+func (fs *GenericStorage) SaveBatch(ctx context.Context, urls []entity.URL) error {
 	if len(urls) == 0 {
 		return nil
 	}
