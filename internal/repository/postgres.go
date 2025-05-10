@@ -93,17 +93,23 @@ func (p *PostgresStorage) Save(url entity.URL) error {
 	}
 	query := `
 	INSERT INTO shortened_urls (short_url, full_url)
-	VALUES ($1, $2);
+	VALUES ($1, $2)
+	ON CONFLICT (full_url) DO UPDATE SET short_url = shortened_urls.short_url
+	RETURNING short_url;
 	`
-	_, err = p.pool.Exec(context.Background(), query, url.ShortURL, url.FullURL)
+	var existingShortURL string
+	err = p.pool.QueryRow(context.Background(), query, url.ShortURL, url.FullURL).Scan(&existingShortURL)
 	if err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return usecases.ErrURLConflict
+			existingShortURL, err = p.GetShortURLByFullURL(fullURL)
+			if err != nil {
+				return fmt.Errorf("failed to get existing short URL: %w", err)
+			}
+			return fmt.Errorf("%w: %s", usecases.ErrURLConflict, existingShortURL)
 		}
 		return fmt.Errorf("failed to save URL: %w", err)
 	}
 	return nil
-
 }
 
 func (p *PostgresStorage) GetFullURL(shortURL ShortURL) (FullURL, error) {

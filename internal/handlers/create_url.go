@@ -64,6 +64,21 @@ func (h *CreateHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := h.creator.CreateShortURL(fullURL)
 	if err != nil {
+		if errors.Is(err, usecases.ErrURLConflict) {
+			w.WriteHeader(http.StatusConflict)
+			baseURL := h.config.BaseURL
+			shortURLPath, err := url.JoinPath(baseURL, shortURL)
+			if err != nil {
+				zap.L().Error("cannot join base URL and short URL", zap.Error(err))
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			_, err = w.Write([]byte(shortURLPath))
+			if err != nil {
+				utils.WriteErrorWithCannotWriteResponse(w, err)
+			}
+			return
+		}
 		if errors.Is(err, usecases.ErrFailedToGenerateShortURL) {
 			w.WriteHeader(http.StatusInternalServerError)
 			zap.L().Error("failed to generate short URL", zap.Error(err), zap.String("url", fullURL))
@@ -71,15 +86,6 @@ func (h *CreateHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				utils.WriteErrorWithCannotWriteResponse(w, err)
 			}
-		}
-		if errors.Is(err, usecases.ErrURLConflict) {
-			w.WriteHeader(http.StatusConflict)
-			zap.L().Error("url already exists", zap.Error(err), zap.String("url", fullURL))
-			_, err := w.Write([]byte("url already exists"))
-			if err != nil {
-				utils.WriteErrorWithCannotWriteResponse(w, err)
-			}
-			return
 		}
 		if errors.Is(err, usecases.ErrEmptyFullURL) {
 			w.WriteHeader(http.StatusBadRequest)
@@ -163,12 +169,33 @@ func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		if errors.Is(err, usecases.ErrURLConflict) {
 			w.WriteHeader(http.StatusConflict)
-			zap.L().Error("url already exists", zap.Error(err), zap.String("url", fullURL))
-			_, err := w.Write([]byte("url already exists"))
+			baseURL := h.config.BaseURL
+			shortURLPath, err := url.JoinPath(baseURL, shortURL)
+			if err != nil {
+				zap.L().Error("cannot join base URL and short URL", zap.Error(err))
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			resp := CreateShortURLEntryResponse{ShortURL: shortURLPath}
+			jsonResp, err := json.Marshal(resp)
+			if err != nil {
+				utils.WriteErrorWithCannotWriteResponse(w, err)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, err = w.Write(jsonResp)
 			if err != nil {
 				utils.WriteErrorWithCannotWriteResponse(w, err)
 			}
 			return
+		}
+		if errors.Is(err, usecases.ErrFailedToGenerateShortURL) {
+			w.WriteHeader(http.StatusInternalServerError)
+			zap.L().Error("failed to generate short URL", zap.Error(err), zap.String("url", fullURL))
+			_, err := w.Write([]byte("failed to generate short URL"))
+			if err != nil {
+				utils.WriteErrorWithCannotWriteResponse(w, err)
+			}
 		}
 		if errors.Is(err, usecases.ErrEmptyFullURL) {
 			w.WriteHeader(http.StatusBadRequest)

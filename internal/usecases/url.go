@@ -65,10 +65,16 @@ func (us URLUseCase) retryCreateShortURL(numberAttempts int, fullURL string) (st
 		}
 		if errors.Is(err, ErrURLGeneratedBefore) {
 			if numberAttempts >= maxNumberAttempts {
-				// if we have reached the maximum number of attempts, we return an error
 				return "", ErrFailedToGenerateShortURL
 			} else {
 				return us.retryCreateShortURL(numberAttempts+1, fullURL)
+			}
+		}
+		if errors.Is(err, ErrURLConflict) {
+			errStr := err.Error()
+			if len(errStr) > len(ErrURLConflict.Error())+2 { // +2 for ": "
+				existingShortURL := errStr[len(ErrURLConflict.Error())+2:]
+				return existingShortURL, ErrURLConflict
 			}
 		}
 		return "", fmt.Errorf("failed to save URL: %w", err)
