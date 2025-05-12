@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -15,7 +16,7 @@ import (
 )
 
 type URLCreator interface {
-	CreateShortURL(fullURL string) (string, error)
+	CreateShortURL(ctx context.Context, fullURL string) (string, error)
 }
 
 type CreateHandler struct {
@@ -32,6 +33,7 @@ func NewCreateHandler(creator URLCreator, cfg *config.Config) *CreateHandler {
 
 func (h *CreateHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
+	ctx := r.Context()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		zap.L().Error("cannot read request body: %v", zap.Error(err))
@@ -62,16 +64,30 @@ func (h *CreateHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortURL, err := h.creator.CreateShortURL(fullURL)
+	shortURL, err := h.creator.CreateShortURL(ctx, fullURL)
 	if err != nil {
-		if errors.Is(err, usecases.ErrURLExists) {
+		if errors.Is(err, usecases.ErrURLConflict) {
 			w.WriteHeader(http.StatusConflict)
-			zap.L().Error("url already exists", zap.Error(err), zap.String("url", fullURL))
-			_, err := w.Write([]byte("url already exists"))
+			baseURL := h.config.BaseURL
+			shortURLPath, err := url.JoinPath(baseURL, shortURL)
+			if err != nil {
+				zap.L().Error("cannot join base URL and short URL", zap.Error(err))
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			_, err = w.Write([]byte(shortURLPath))
 			if err != nil {
 				utils.WriteErrorWithCannotWriteResponse(w, err)
 			}
 			return
+		}
+		if errors.Is(err, usecases.ErrFailedToGenerateShortURL) {
+			w.WriteHeader(http.StatusInternalServerError)
+			zap.L().Error("failed to generate short URL", zap.Error(err), zap.String("url", fullURL))
+			_, err := w.Write([]byte("failed to generate short URL"))
+			if err != nil {
+				utils.WriteErrorWithCannotWriteResponse(w, err)
+			}
 		}
 		if errors.Is(err, usecases.ErrEmptyFullURL) {
 			w.WriteHeader(http.StatusBadRequest)
@@ -90,13 +106,12 @@ func (h *CreateHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 	baseURL := h.config.BaseURL
 	shortURLPath, err := url.JoinPath(baseURL, shortURL)
 	if err != nil {
-		zap.L().Error("cannot join base URL and short URL: %v", zap.Error(err))
+		zap.L().Error("cannot join base URL and short URL", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	_, err = w.Write([]byte(shortURLPath))
 	if err != nil {
-		zap.L().Error("cannot write short URL: %v", zap.Error(err))
 		utils.WriteErrorWithCannotWriteResponse(w, err)
 	}
 }
@@ -111,6 +126,7 @@ type CreateShortURLEntryResponse struct {
 
 func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
+	ctx := r.Context()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		zap.L().Error("cannot read request body: %v", zap.Error(err))
@@ -151,16 +167,37 @@ func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	shortURL, err := h.creator.CreateShortURL(fullURL)
+	shortURL, err := h.creator.CreateShortURL(ctx, fullURL)
 	if err != nil {
-		if errors.Is(err, usecases.ErrURLExists) {
+		if errors.Is(err, usecases.ErrURLConflict) {
+			baseURL := h.config.BaseURL
+			shortURLPath, err := url.JoinPath(baseURL, shortURL)
+			if err != nil {
+				zap.L().Error("cannot join base URL and short URL", zap.Error(err))
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			resp := CreateShortURLEntryResponse{ShortURL: shortURLPath}
+			jsonResp, err := json.Marshal(resp)
+			if err != nil {
+				utils.WriteErrorWithCannotWriteResponse(w, err)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
-			zap.L().Error("url already exists", zap.Error(err), zap.String("url", fullURL))
-			_, err := w.Write([]byte("url already exists"))
+			_, err = w.Write(jsonResp)
 			if err != nil {
 				utils.WriteErrorWithCannotWriteResponse(w, err)
 			}
 			return
+		}
+		if errors.Is(err, usecases.ErrFailedToGenerateShortURL) {
+			w.WriteHeader(http.StatusInternalServerError)
+			zap.L().Error("failed to generate short URL", zap.Error(err), zap.String("url", fullURL))
+			_, err := w.Write([]byte("failed to generate short URL"))
+			if err != nil {
+				utils.WriteErrorWithCannotWriteResponse(w, err)
+			}
 		}
 		if errors.Is(err, usecases.ErrEmptyFullURL) {
 			w.WriteHeader(http.StatusBadRequest)
@@ -178,7 +215,7 @@ func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Re
 	baseURL := h.config.BaseURL
 	shortURLPath, err := url.JoinPath(baseURL, shortURL)
 	if err != nil {
-		zap.L().Error("cannot join base URL and short URL: %v", zap.Error(err))
+		zap.L().Error("cannot join base URL and short URL", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -188,12 +225,10 @@ func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Re
 		utils.WriteErrorWithCannotWriteResponse(w, err)
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_, err = w.Write(jsonResp)
 	if err != nil {
 		utils.WriteErrorWithCannotWriteResponse(w, err)
-		return
 	}
 }

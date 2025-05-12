@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -12,7 +13,7 @@ import (
 )
 
 type URLGetter interface {
-	GetFullURL(shortURL string) (string, error)
+	GetFullURL(ctx context.Context, shortURL string) (string, error)
 }
 
 type GetHandler struct {
@@ -26,8 +27,9 @@ func NewGetHandler(getter URLGetter) *GetHandler {
 }
 
 func (h *GetHandler) GetFullURL(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	shortURL := chi.URLParam(r, "id")
-	fullURL, err := h.getter.GetFullURL(shortURL)
+	fullURL, err := h.getter.GetFullURL(ctx, shortURL)
 	if err != nil {
 		if errors.Is(err, usecases.ErrEmptyShortURL) {
 			zap.L().Error("short url is empty", zap.Error(err), zap.String("shortURL", shortURL))
