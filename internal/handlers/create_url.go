@@ -11,12 +11,13 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/radiophysiker/shortener_link/internal/config"
+	"github.com/radiophysiker/shortener_link/internal/middleware"
 	"github.com/radiophysiker/shortener_link/internal/usecases"
 	"github.com/radiophysiker/shortener_link/internal/utils"
 )
 
 type URLCreator interface {
-	CreateShortURL(ctx context.Context, fullURL string) (string, error)
+	CreateShortURL(ctx context.Context, fullURL string, userID string) (string, error)
 }
 
 type CreateHandler struct {
@@ -37,6 +38,14 @@ func (h *CreateHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		zap.L().Error("cannot read request body: %v", zap.Error(err))
+		return
+	}
+
+	// Получаем UserID из контекста
+	userID, ok := middleware.GetUserIDFromContext(ctx)
+	if !ok || userID == "" {
+		w.WriteHeader(http.StatusInternalServerError)
+		zap.L().Error("userID not found in context")
 		return
 	}
 
@@ -64,7 +73,7 @@ func (h *CreateHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortURL, err := h.creator.CreateShortURL(ctx, fullURL)
+	shortURL, err := h.creator.CreateShortURL(ctx, fullURL, userID)
 	if err != nil {
 		if errors.Is(err, usecases.ErrURLConflict) {
 			w.WriteHeader(http.StatusConflict)
@@ -133,6 +142,14 @@ func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Получаем UserID из контекста
+	userID, ok := middleware.GetUserIDFromContext(ctx)
+	if !ok || userID == "" {
+		w.WriteHeader(http.StatusInternalServerError)
+		zap.L().Error("userID not found in context")
+		return
+	}
+
 	var request CreateShortURLEntryRequest
 	err = json.Unmarshal(body, &request)
 	if err != nil {
@@ -167,7 +184,7 @@ func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	shortURL, err := h.creator.CreateShortURL(ctx, fullURL)
+	shortURL, err := h.creator.CreateShortURL(ctx, fullURL, userID)
 	if err != nil {
 		if errors.Is(err, usecases.ErrURLConflict) {
 			baseURL := h.config.BaseURL

@@ -16,22 +16,25 @@ type (
 	FullURL  = string
 )
 
-type GenericStorage struct {
-	filePath string
-	urls     map[ShortURL]FullURL
-	count    int64
-	file     *os.File
-}
-
 type FileRecord struct {
 	UUID        int64  `json:"uuid"`
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
+	UserID      string `json:"user_id"`
+}
+
+type GenericStorage struct {
+	filePath string
+	urls     map[ShortURL]FullURL
+	userURLs map[string][]entity.URL // userID -> URLs
+	count    int64
+	file     *os.File
 }
 
 func NewGenericStorage(filePath string) (*GenericStorage, error) {
 	fs := &GenericStorage{
 		urls:     make(map[ShortURL]FullURL),
+		userURLs: make(map[string][]entity.URL),
 		filePath: filePath,
 		count:    0,
 	}
@@ -54,11 +57,19 @@ func (fs *GenericStorage) init() error {
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		var record entity.URL
+		var record FileRecord
 		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
 			return err
 		}
-		fs.urls[record.ShortURL] = record.FullURL
+
+		url := entity.URL{
+			ShortURL: record.ShortURL,
+			FullURL:  record.OriginalURL,
+			UserID:   record.UserID,
+		}
+
+		fs.urls[record.ShortURL] = record.OriginalURL
+		fs.userURLs[record.UserID] = append(fs.userURLs[record.UserID], url)
 		fs.count++
 	}
 
@@ -108,6 +119,7 @@ func (fs *GenericStorage) Save(ctx context.Context, url entity.URL) error {
 			UUID:        uuid,
 			ShortURL:    url.ShortURL,
 			OriginalURL: url.FullURL,
+			UserID:      url.UserID,
 		}
 		data, err := json.Marshal(record)
 		if err != nil {
@@ -120,6 +132,7 @@ func (fs *GenericStorage) Save(ctx context.Context, url entity.URL) error {
 	}
 
 	fs.urls[url.ShortURL] = url.FullURL
+	fs.userURLs[url.UserID] = append(fs.userURLs[url.UserID], url)
 	return nil
 }
 
@@ -132,6 +145,19 @@ func (fs *GenericStorage) GetFullURL(ctx context.Context, shortURL ShortURL) (Fu
 		return "", fmt.Errorf("%w for: %s", usecases.ErrURLNotFound, shortURL)
 	}
 	return fullURL, nil
+}
+
+func (fs *GenericStorage) GetURLsByUserID(ctx context.Context, userID string) ([]entity.URL, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("userID cannot be empty")
+	}
+
+	urls, exists := fs.userURLs[userID]
+	if !exists {
+		return []entity.URL{}, nil
+	}
+
+	return urls, nil
 }
 
 func (fs *GenericStorage) Close() error {
@@ -157,12 +183,13 @@ func (fs *GenericStorage) SaveBatch(ctx context.Context, urls []entity.URL) erro
 		if err != nil {
 			return fmt.Errorf("failed to check if URL exists: %w", err)
 		}
-		if fs.filePath == "" {
+		if fs.filePath != "" {
 			uuid := fs.getCount()
 			record := FileRecord{
 				UUID:        uuid,
 				ShortURL:    url.ShortURL,
 				OriginalURL: url.FullURL,
+				UserID:      url.UserID,
 			}
 			data, err := json.Marshal(record)
 			if err != nil {
@@ -174,6 +201,7 @@ func (fs *GenericStorage) SaveBatch(ctx context.Context, urls []entity.URL) erro
 			}
 		}
 		fs.urls[url.ShortURL] = url.FullURL
+		fs.userURLs[url.UserID] = append(fs.userURLs[url.UserID], url)
 	}
 
 	return nil

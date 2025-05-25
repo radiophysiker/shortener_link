@@ -52,6 +52,7 @@ func Run() error {
 	createHandler := handlers.NewCreateHandler(useCasesURLShortener, cfg)
 	createBatchURLsHandler := handlers.NewCreateBatchURLsHandler(useCasesURLShortener, cfg)
 	getHandler := handlers.NewGetHandler(useCasesURLShortener)
+	userURLsHandler := handlers.NewUserURLsHandler(useCasesURLShortener, cfg)
 	pg, err := repository.NewPostgresStorage(cfg.DatabaseDSN)
 	if err != nil {
 		return fmt.Errorf("cannot connect to postgres: %w", err)
@@ -65,7 +66,7 @@ func Run() error {
 	pingHandler := handlers.NewPingHandler(pg)
 
 	// Create router
-	router := v1.NewRouter(createHandler, createBatchURLsHandler, getHandler, pingHandler)
+	router := v1.NewRouter(createHandler, createBatchURLsHandler, getHandler, pingHandler, userURLsHandler)
 	// Start server
 	logger.Info("Starting server", zap.String("port", cfg.ServerPort))
 	err = http.ListenAndServe(cfg.ServerPort, router)

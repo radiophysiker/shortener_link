@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/radiophysiker/shortener_link/internal/config"
+	"github.com/radiophysiker/shortener_link/internal/middleware"
 	"github.com/radiophysiker/shortener_link/internal/usecases"
 	"github.com/radiophysiker/shortener_link/internal/utils"
 )
@@ -25,21 +26,30 @@ type BatchURLResponse struct {
 	ShortURL      string `json:"short_url"`
 }
 
-type CreateBatchURLs interface {
-	CreateBatchURLs(ctx context.Context, items []usecases.BatchItem) ([]usecases.BatchItem, error)
+type BatchURLCreator interface {
+	CreateBatchURLs(ctx context.Context, items []usecases.BatchItem, userID string) ([]usecases.BatchItem, error)
 }
 
 type CreateBatchURLsHandler struct {
-	creator CreateBatchURLs
+	creator BatchURLCreator
 	config  *config.Config
 }
 
-func NewCreateBatchURLsHandler(createBatchURLs CreateBatchURLs, cfg *config.Config) *CreateBatchURLsHandler {
+func NewCreateBatchURLsHandler(createBatchURLs BatchURLCreator, cfg *config.Config) *CreateBatchURLsHandler {
 	return &CreateBatchURLsHandler{creator: createBatchURLs, config: cfg}
 }
 
 func (h *CreateBatchURLsHandler) CreateBatchURLs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
+	// Получаем UserID из контекста
+	userID, ok := middleware.GetUserIDFromContext(ctx)
+	if !ok || userID == "" {
+		w.WriteHeader(http.StatusInternalServerError)
+		zap.L().Error("userID not found in context")
+		return
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -113,11 +123,11 @@ func (h *CreateBatchURLsHandler) CreateBatchURLs(w http.ResponseWriter, r *http.
 		})
 	}
 
-	resultItems, err := h.creator.CreateBatchURLs(ctx, batchItems)
+	items, err := h.creator.CreateBatchURLs(ctx, batchItems, userID)
 	if err != nil {
 		if errors.Is(err, usecases.ErrURLConflict) {
 			zap.L().Warn("some URLs in batch already exist", zap.Error(err))
-			if len(resultItems) == 0 {
+			if len(items) == 0 {
 				w.WriteHeader(http.StatusConflict)
 				_, err := w.Write([]byte("all URLs in batch already exist"))
 				if err != nil {
@@ -133,9 +143,9 @@ func (h *CreateBatchURLsHandler) CreateBatchURLs(w http.ResponseWriter, r *http.
 		}
 	}
 
-	responseItems := make([]BatchURLResponse, 0, len(resultItems))
+	responseItems := make([]BatchURLResponse, 0, len(items))
 	baseURL := h.config.BaseURL
-	for _, item := range resultItems {
+	for _, item := range items {
 		shortURLPath, err := url.JoinPath(baseURL, item.ShortURL)
 		if err != nil {
 			zap.L().Error("cannot join base URL and short URL", zap.Error(err))

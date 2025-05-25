@@ -33,6 +33,7 @@ type URLRepository interface {
 	Save(ctx context.Context, url entity.URL) error
 	GetFullURL(ctx context.Context, shortURL string) (string, error)
 	SaveBatch(ctx context.Context, urls []entity.URL) error
+	GetURLsByUserID(ctx context.Context, userID string) ([]entity.URL, error)
 }
 
 type URLUseCase struct {
@@ -47,17 +48,18 @@ func NewURLShortener(re URLRepository, cfg *config.Config) *URLUseCase {
 	}
 }
 
-// CreateShortURL creates a short URL.
-func (us URLUseCase) CreateShortURL(ctx context.Context, fullURL string) (string, error) {
-	return us.retryCreateShortURL(ctx, 1, fullURL)
+// CreateShortURL creates a short URL with user ID.
+func (us URLUseCase) CreateShortURL(ctx context.Context, fullURL string, userID string) (string, error) {
+	return us.retryCreateShortURL(ctx, 1, fullURL, userID)
 }
 
 // retryCreateShortURL is a recursive function that tries to create a short URL.
-func (us URLUseCase) retryCreateShortURL(ctx context.Context, numberAttempts int, fullURL string) (string, error) {
+func (us URLUseCase) retryCreateShortURL(ctx context.Context, numberAttempts int, fullURL string, userID string) (string, error) {
 	shortURL := utils.GetShortRandomString(lenShortenedURL)
 	url := entity.URL{
 		ShortURL: shortURL,
 		FullURL:  fullURL,
+		UserID:   userID,
 	}
 	err := us.urlRepository.Save(ctx, url)
 	if err != nil {
@@ -68,7 +70,7 @@ func (us URLUseCase) retryCreateShortURL(ctx context.Context, numberAttempts int
 			if numberAttempts >= maxNumberAttempts {
 				return "", ErrFailedToGenerateShortURL
 			} else {
-				return us.retryCreateShortURL(ctx, numberAttempts+1, fullURL)
+				return us.retryCreateShortURL(ctx, numberAttempts+1, fullURL, userID)
 			}
 		}
 		if errors.Is(err, ErrURLConflict) {
@@ -83,8 +85,8 @@ func (us URLUseCase) retryCreateShortURL(ctx context.Context, numberAttempts int
 	return shortURL, nil
 }
 
-// CreateBatchURLs creates multiple short URLs in a batch.
-func (us URLUseCase) CreateBatchURLs(ctx context.Context, items []BatchItem) ([]BatchItem, error) {
+// CreateBatchURLs creates multiple short URLs in a batch with user ID.
+func (us URLUseCase) CreateBatchURLs(ctx context.Context, items []BatchItem, userID string) ([]BatchItem, error) {
 	if len(items) == 0 {
 		return nil, ErrEmptyBatch
 	}
@@ -103,6 +105,7 @@ func (us URLUseCase) CreateBatchURLs(ctx context.Context, items []BatchItem) ([]
 		urls = append(urls, entity.URL{
 			ShortURL: shortURL,
 			FullURL:  items[i].OriginalURL,
+			UserID:   userID,
 		})
 
 		items[i].ShortURL = shortURL
@@ -129,4 +132,13 @@ func (us URLUseCase) GetFullURL(ctx context.Context, shortURL string) (string, e
 		return "", fmt.Errorf("failed to get full URL: %w", err)
 	}
 	return fullURL, nil
+}
+
+// GetURLsByUserID returns all URLs created by the user.
+func (us URLUseCase) GetURLsByUserID(ctx context.Context, userID string) ([]entity.URL, error) {
+	urls, err := us.urlRepository.GetURLsByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user URLs: %w", err)
+	}
+	return urls, nil
 }
