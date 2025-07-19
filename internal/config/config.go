@@ -12,6 +12,8 @@ type Config struct {
 	ServerPort      string `env:"SERVER_ADDRESS" envDefault:"localhost:8080"`
 	FileStoragePath string `env:"FILE_STORAGE_PATH" envDefault:"/tmp/short-url-fs.json"`
 	DatabaseDSN     string `env:"DATABASE_DSN"`
+	JWTSecretKey    string `env:"JWT_SECRET_KEY" envDefault:"super-secret-key-for-jwt-signing"`
+	CookieName      string `env:"COOKIE_NAME" envDefault:"jwt_token"`
 }
 
 var cfg Config
@@ -24,6 +26,8 @@ func LoadConfig() (*Config, error) {
 	flag.StringVar(&cfg.ServerPort, "a", cfg.ServerPort, "address and port for result url")
 	flag.StringVar(&cfg.FileStoragePath, "f", cfg.FileStoragePath, "the full name of the file where the data is saved")
 	flag.StringVar(&cfg.DatabaseDSN, "d", cfg.DatabaseDSN, "PostgresSQL DSN")
+	flag.StringVar(&cfg.JWTSecretKey, "j", cfg.JWTSecretKey, "JWT secret key")
+	flag.StringVar(&cfg.CookieName, "c", cfg.CookieName, "name of the authentication cookie")
 	flag.Parse()
 	return &cfg, nil
 }
