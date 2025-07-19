@@ -11,12 +11,13 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/radiophysiker/shortener_link/internal/config"
+	"github.com/radiophysiker/shortener_link/internal/middleware"
 	"github.com/radiophysiker/shortener_link/internal/usecases"
 	"github.com/radiophysiker/shortener_link/internal/utils"
 )
 
 type URLCreator interface {
-	CreateShortURL(ctx context.Context, fullURL string) (string, error)
+	CreateShortURL(ctx context.Context, fullURL string, userID string) (string, error)
 }
 
 type CreateHandler struct {
@@ -64,7 +65,15 @@ func (h *CreateHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortURL, err := h.creator.CreateShortURL(ctx, fullURL)
+	// Получаем userID из контекста
+	userID := middleware.GetUserIDFromContext(ctx)
+	if userID == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		zap.L().Error("userID not found in context")
+		return
+	}
+
+	shortURL, err := h.creator.CreateShortURL(ctx, fullURL, userID)
 	if err != nil {
 		if errors.Is(err, usecases.ErrURLConflict) {
 			w.WriteHeader(http.StatusConflict)
@@ -167,7 +176,15 @@ func (h *CreateHandler) CreateShortURLWithJSON(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	shortURL, err := h.creator.CreateShortURL(ctx, fullURL)
+	// Получаем userID из контекста
+	userID := middleware.GetUserIDFromContext(ctx)
+	if userID == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		zap.L().Error("userID not found in context")
+		return
+	}
+
+	shortURL, err := h.creator.CreateShortURL(ctx, fullURL, userID)
 	if err != nil {
 		if errors.Is(err, usecases.ErrURLConflict) {
 			baseURL := h.config.BaseURL

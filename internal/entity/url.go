@@ -4,5 +4,6 @@ type (
 	URL struct {
 		ShortURL string
 		FullURL  string
+		UserID   string // UserID для идентификации пользователя
 	}
 )

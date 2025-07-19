@@ -13,7 +13,8 @@ type Saver interface {
 }
 
 type Finder interface {
-	GetFullURL(ctx context.Context, shortURL ShortURL) (FullURL, error)
+	GetFullURL(ctx context.Context, shortURL string) (string, error)
+	GetUserURLs(ctx context.Context, userID string) ([]entity.URL, error)
 }
 
 type Closer interface {
