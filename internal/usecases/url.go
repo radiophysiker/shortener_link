@@ -19,6 +19,7 @@ var (
 	ErrEmptyFullURL             = errors.New("empty full URL")
 	ErrEmptyShortURL            = errors.New("empty short URL")
 	ErrURLNotFound              = errors.New("URL not found")
+	ErrURLDeleted               = errors.New("URL has been deleted")
 	ErrEmptyBatch               = errors.New("empty batch")
 	ErrURLConflict              = errors.New("URL already exists in the database")
 	ErrEmptyUserID              = errors.New("empty user ID")
@@ -35,6 +36,7 @@ type URLRepository interface {
 	GetFullURL(ctx context.Context, shortURL string) (string, error)
 	SaveBatch(ctx context.Context, urls []entity.URL) error
 	GetUserURLs(ctx context.Context, userID string) ([]entity.URL, error)
+	DeleteBatch(ctx context.Context, shortURLs []string, userID string) error
 }
 
 type URLUseCase struct {
@@ -146,4 +148,43 @@ func (us URLUseCase) GetUserURLs(ctx context.Context, userID string) ([]entity.U
 	}
 
 	return urls, nil
+}
+
+// DeleteBatch асинхронно помечает URL как удаленные
+func (us URLUseCase) DeleteBatch(ctx context.Context, shortURLs []string, userID string) error {
+	if userID == "" {
+		return ErrEmptyUserID
+	}
+
+	if len(shortURLs) == 0 {
+		return nil
+	}
+
+	// Используем горутину для асинхронного удаления с паттерном fanIn
+	go func() {
+		// Создаем канал для сбора URL для удаления
+		urlChan := make(chan string, len(shortURLs))
+
+		// Запускаем горутины для отправки URL в канал (fanIn pattern)
+		for _, shortURL := range shortURLs {
+			go func(url string) {
+				urlChan <- url
+			}(shortURL)
+		}
+
+		// Собираем все URL из канала
+		var batchURLs []string
+		for i := 0; i < len(shortURLs); i++ {
+			batchURLs = append(batchURLs, <-urlChan)
+		}
+		close(urlChan)
+
+		// Выполняем batch update
+		if err := us.urlRepository.DeleteBatch(context.Background(), batchURLs, userID); err != nil {
+			// В реальном приложении здесь должно быть логирование
+			fmt.Printf("Failed to delete URLs batch: %v\n", err)
+		}
+	}()
+
+	return nil
 }

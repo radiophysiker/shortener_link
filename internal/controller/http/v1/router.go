@@ -15,6 +15,7 @@ func NewRouter(
 	createBatchURLsHandler *handlers.CreateBatchURLsHandler,
 	getHandler *handlers.GetHandler,
 	getUserURLsHandler *handlers.GetUserURLsHandler,
+	deleteURLsHandler *handlers.DeleteURLsHandler,
 	pingHandler *handlers.PingHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
@@ -30,6 +31,7 @@ func NewRouter(
 	r.Get("/ping", pingHandler.Ping)
 	r.Route("/api/user", func(r chi.Router) {
 		r.Get("/urls", getUserURLsHandler.GetUserURLs)
+		r.Delete("/urls", deleteURLsHandler.DeleteUserURLs)
 	})
 	return r
 }

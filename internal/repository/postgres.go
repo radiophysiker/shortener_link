@@ -48,6 +48,7 @@ func (p *PostgresStorage) createTable(ctx context.Context) error {
 		short_url VARCHAR(10) NOT NULL UNIQUE,
 		full_url TEXT NOT NULL UNIQUE,
 		user_id VARCHAR(36),
+		is_deleted BOOLEAN DEFAULT FALSE,
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
 	CREATE INDEX IF NOT EXISTS idx_short_url ON shortened_urls(short_url);
@@ -122,18 +123,24 @@ func (p *PostgresStorage) GetFullURL(ctx context.Context, shortURL ShortURL) (Fu
 		return "", usecases.ErrEmptyShortURL
 	}
 	query := `
-	SELECT full_url
+	SELECT full_url, is_deleted
 	FROM shortened_urls
 	WHERE short_url = $1;
 	`
 	var fullURL FullURL
-	err := p.pool.QueryRow(ctx, query, shortURL).Scan(&fullURL)
+	var isDeleted bool
+	err := p.pool.QueryRow(ctx, query, shortURL).Scan(&fullURL, &isDeleted)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", fmt.Errorf("%w: %s", usecases.ErrURLNotFound, shortURL)
 		}
 		return "", fmt.Errorf("couldn't get full URL for %s: %w", shortURL, err)
 	}
+
+	if isDeleted {
+		return "", fmt.Errorf("%w: %s", usecases.ErrURLDeleted, shortURL)
+	}
+
 	return fullURL, nil
 }
 
@@ -210,9 +217,9 @@ func (p *PostgresStorage) GetUserURLs(ctx context.Context, userID string) ([]ent
 	}
 
 	query := `
-	SELECT short_url, full_url
+	SELECT short_url, full_url, is_deleted
 	FROM shortened_urls
-	WHERE user_id = $1;
+	WHERE user_id = $1 AND is_deleted = FALSE;
 	`
 
 	rows, err := p.pool.Query(ctx, query, userID)
@@ -224,11 +231,13 @@ func (p *PostgresStorage) GetUserURLs(ctx context.Context, userID string) ([]ent
 	var urls []entity.URL
 	for rows.Next() {
 		var url entity.URL
-		err := rows.Scan(&url.ShortURL, &url.FullURL)
+		var isDeleted bool
+		err := rows.Scan(&url.ShortURL, &url.FullURL, &isDeleted)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan URL row: %w", err)
 		}
 		url.UserID = userID // Устанавливаем userID, так как мы его уже знаем
+		url.IsDeleted = isDeleted
 		urls = append(urls, url)
 	}
 
@@ -237,4 +246,26 @@ func (p *PostgresStorage) GetUserURLs(ctx context.Context, userID string) ([]ent
 	}
 
 	return urls, nil
+}
+
+func (p *PostgresStorage) DeleteBatch(ctx context.Context, shortURLs []string, userID string) error {
+	if len(shortURLs) == 0 {
+		return nil
+	}
+
+	if userID == "" {
+		return usecases.ErrEmptyUserID
+	}
+
+	query := `
+	UPDATE shortened_urls
+	SET is_deleted = TRUE
+	WHERE short_url = ANY($1) AND user_id = $2 AND is_deleted = FALSE;
+	`
+
+	_, err := p.pool.Exec(ctx, query, shortURLs, userID)
+	if err != nil {
+		return fmt.Errorf("failed to delete URLs: %w", err)
+	}
+	return nil
 }

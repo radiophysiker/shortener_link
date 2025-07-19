@@ -21,9 +21,14 @@ type Closer interface {
 	Close() error
 }
 
+type Deleter interface {
+	DeleteBatch(ctx context.Context, shortURLs []string, userID string) error
+}
+
 type Storage interface {
 	Saver
 	Finder
+	Deleter
 	Closer
 }
 
