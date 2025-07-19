@@ -47,6 +47,8 @@ func (p *PostgresStorage) createTable(ctx context.Context) error {
 		id SERIAL PRIMARY KEY,
 		short_url VARCHAR(10) NOT NULL UNIQUE,
 		full_url TEXT NOT NULL UNIQUE,
+		user_id VARCHAR(36),
+		is_deleted BOOLEAN DEFAULT FALSE,
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
 	CREATE INDEX IF NOT EXISTS idx_short_url ON shortened_urls(short_url);
@@ -98,10 +100,10 @@ func (p *PostgresStorage) Save(ctx context.Context, url entity.URL) error {
 
 	// If no existing URL found, proceed with saving
 	query := `
-	INSERT INTO shortened_urls (short_url, full_url)
-	VALUES ($1, $2);
+	INSERT INTO shortened_urls (short_url, full_url, user_id)
+	VALUES ($1, $2, $3);
 	`
-	_, err = p.pool.Exec(context.Background(), query, url.ShortURL, url.FullURL)
+	_, err = p.pool.Exec(context.Background(), query, url.ShortURL, url.FullURL, url.UserID)
 	if err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			// If we get a unique violation, try to get the existing short URL again
@@ -121,18 +123,24 @@ func (p *PostgresStorage) GetFullURL(ctx context.Context, shortURL ShortURL) (Fu
 		return "", usecases.ErrEmptyShortURL
 	}
 	query := `
-	SELECT full_url
+	SELECT full_url, is_deleted
 	FROM shortened_urls
 	WHERE short_url = $1;
 	`
 	var fullURL FullURL
-	err := p.pool.QueryRow(ctx, query, shortURL).Scan(&fullURL)
+	var isDeleted bool
+	err := p.pool.QueryRow(ctx, query, shortURL).Scan(&fullURL, &isDeleted)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", fmt.Errorf("%w: %s", usecases.ErrURLNotFound, shortURL)
 		}
 		return "", fmt.Errorf("couldn't get full URL for %s: %w", shortURL, err)
 	}
+
+	if isDeleted {
+		return "", fmt.Errorf("%w: %s", usecases.ErrURLDeleted, shortURL)
+	}
+
 	return fullURL, nil
 }
 
@@ -178,10 +186,10 @@ func (p *PostgresStorage) SaveBatch(ctx context.Context, urls []entity.URL) erro
 
 	for _, url := range urls {
 		query := `
-		INSERT INTO shortened_urls	 (short_url, full_url)
-		VALUES ($1, $2);
+		INSERT INTO shortened_urls	 (short_url, full_url, user_id)
+		VALUES ($1, $2, $3);
 		`
-		_, err = tx.Exec(ctx, query, url.ShortURL, url.FullURL)
+		_, err = tx.Exec(ctx, query, url.ShortURL, url.FullURL, url.UserID)
 		if err != nil {
 			zap.L().Error("failed to save URL in batch", zap.Error(err))
 			if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == pgerrcode.UniqueViolation {
@@ -200,5 +208,64 @@ func (p *PostgresStorage) SaveBatch(ctx context.Context, urls []entity.URL) erro
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
+	return nil
+}
+
+func (p *PostgresStorage) GetUserURLs(ctx context.Context, userID string) ([]entity.URL, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("%w: userID is empty", usecases.ErrEmptyUserID)
+	}
+
+	query := `
+	SELECT short_url, full_url, is_deleted
+	FROM shortened_urls
+	WHERE user_id = $1 AND is_deleted = FALSE;
+	`
+
+	rows, err := p.pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query user URLs: %w", err)
+	}
+	defer rows.Close()
+
+	var urls []entity.URL
+	for rows.Next() {
+		var url entity.URL
+		var isDeleted bool
+		err := rows.Scan(&url.ShortURL, &url.FullURL, &isDeleted)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan URL row: %w", err)
+		}
+		url.UserID = userID // Устанавливаем userID, так как мы его уже знаем
+		url.IsDeleted = isDeleted
+		urls = append(urls, url)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating over rows: %w", err)
+	}
+
+	return urls, nil
+}
+
+func (p *PostgresStorage) DeleteBatch(ctx context.Context, shortURLs []string, userID string) error {
+	if len(shortURLs) == 0 {
+		return nil
+	}
+
+	if userID == "" {
+		return usecases.ErrEmptyUserID
+	}
+
+	query := `
+	UPDATE shortened_urls
+	SET is_deleted = TRUE
+	WHERE short_url = ANY($1) AND user_id = $2 AND is_deleted = FALSE;
+	`
+
+	_, err := p.pool.Exec(ctx, query, shortURLs, userID)
+	if err != nil {
+		return fmt.Errorf("failed to delete URLs: %w", err)
+	}
 	return nil
 }

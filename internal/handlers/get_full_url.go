@@ -49,6 +49,15 @@ func (h *GetHandler) GetFullURL(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
+		if errors.Is(err, usecases.ErrURLDeleted) {
+			zap.L().Error("url is deleted", zap.Error(err), zap.String("shortURL", shortURL))
+			w.WriteHeader(http.StatusGone)
+			_, err := w.Write([]byte("url has been deleted"))
+			if err != nil {
+				utils.WriteErrorWithCannotWriteResponse(w, err)
+			}
+			return
+		}
 		zap.L().Error("cannot get full URL: %v", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return

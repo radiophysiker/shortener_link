@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/radiophysiker/shortener_link/internal/config"
+	"github.com/radiophysiker/shortener_link/internal/middleware"
 	"github.com/radiophysiker/shortener_link/internal/usecases"
 	"github.com/radiophysiker/shortener_link/internal/utils"
 )
@@ -26,7 +27,7 @@ type BatchURLResponse struct {
 }
 
 type CreateBatchURLs interface {
-	CreateBatchURLs(ctx context.Context, items []usecases.BatchItem) ([]usecases.BatchItem, error)
+	CreateBatchURLs(ctx context.Context, items []usecases.BatchItem, userID string) ([]usecases.BatchItem, error)
 }
 
 type CreateBatchURLsHandler struct {
@@ -112,8 +113,13 @@ func (h *CreateBatchURLsHandler) CreateBatchURLs(w http.ResponseWriter, r *http.
 			OriginalURL:   item.OriginalURL,
 		})
 	}
-
-	resultItems, err := h.creator.CreateBatchURLs(ctx, batchItems)
+	userID := middleware.GetUserIDFromContext(ctx)
+	if userID == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		zap.L().Error("userID not found in context")
+		return
+	}
+	resultItems, err := h.creator.CreateBatchURLs(ctx, batchItems, userID)
 	if err != nil {
 		if errors.Is(err, usecases.ErrURLConflict) {
 			zap.L().Warn("some URLs in batch already exist", zap.Error(err))
